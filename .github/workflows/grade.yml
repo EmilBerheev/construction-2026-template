@@ -1,0 +1,77 @@
+# Автопроверка лабораторных. Не меняйте этот файл: преподаватель сверяет его отпечаток.
+# Таблица баллов появляется в сводке прогона (Actions → прогон → Summary), файл grade.json — в артефактах.
+name: grade
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: grade-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  grade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: grader
+          POSTGRES_PASSWORD: grader
+          POSTGRES_DB: grader
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U grader"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      GRADER_PG_URL: postgresql+psycopg://grader:grader@localhost:5432/grader
+    steps:
+      - name: Получить репозиторий с полной историей
+        uses: actions/checkout@v7
+        with:
+          # Вся история нужна для проверок Conventional Commits и хешей из журнала рефакторинга.
+          fetch-depth: 0
+
+      # Если преподаватель задал переменную репозитория GRADER_REPO (owner/name),
+      # грейдер берётся из его репозитория, а не из папки grader/ студента.
+      - name: Взять грейдер преподавателя
+        if: ${{ vars.GRADER_REPO != '' }}
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ vars.GRADER_REPO }}
+          ref: ${{ vars.GRADER_REF || 'main' }}
+          path: .teacher-grader
+          sparse-checkout: grader
+          # Для закрытого репозитория преподавателя нужен секрет GRADER_TOKEN (fine-grained, read-only).
+          token: ${{ secrets.GRADER_TOKEN || github.token }}
+          persist-credentials: false
+      - name: Подменить грейдер
+        if: ${{ vars.GRADER_REPO != '' }}
+        run: rm -rf grader && mv .teacher-grader/grader grader && rm -rf .teacher-grader
+
+      - name: Установить uv
+        uses: astral-sh/setup-uv@v10.3.3
+        with:
+          enable-cache: true
+
+      - name: Установить зависимости
+        run: uv sync --all-groups
+
+      - name: Автопроверка ЛР1–ЛР4
+        run: uv run python -m grader all
+
+      - name: Сохранить grade.json
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: grade
+          path: grade.json
+          if-no-files-found: warn

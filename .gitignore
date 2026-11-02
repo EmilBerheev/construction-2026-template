@@ -1,0 +1,21 @@
+# Окружение и кэши
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+.coverage.*
+coverage.json
+htmlcov/
+
+# Локальная база и результаты автопроверки
+*.db
+*.sqlite3
+grade.json
+
+# Редакторы
+.idea/
+.vscode/
